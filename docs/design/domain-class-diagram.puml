@@ -1,0 +1,238 @@
+@startuml
+scale max 3500 width
+skinparam dpi 60
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam nodesep 20
+skinparam ranksep 30
+left to right direction
+hide empty members
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam linetype ortho
+hide empty members
+
+package "Accounts and Wallet" {
+  class User {
+    +id : UUID
+    +name : String
+    +phone : String
+    +userType : CUSTOMER | AGENT | STAFF
+    +verificationLevel : BASIC | VERIFIED
+    +status : ACTIVE | BLOCKED
+    +blockedUntil : DateTime
+  }
+  class Wallet {
+    +id : UUID
+    +availableBalance() : Decimal
+    +heldBalance() : Decimal
+  }
+  class LedgerEntry {
+    +id : UUID
+    +entryType : EntryType
+    +amount : Decimal
+    +reason : String
+    +createdAt : DateTime
+  }
+  class Hold {
+    +id : UUID
+    +amount : Decimal
+    +status : ACTIVE | CAPTURED | RELEASED
+  }
+  class TopUp {
+    +id : UUID
+    +amount : Decimal
+    +source : CARD | AGENT_CASH
+  }
+  class Refund {
+    +id : UUID
+    +amount : Decimal
+    +status : String
+    +reason : String
+  }
+}
+
+package "Biller Catalog" {
+  class Biller {
+    +id : UUID
+    +code : String
+    +name : String
+    +adapterCode : String
+    +active : boolean
+  }
+  class BillerService {
+    +id : UUID
+    +name : String
+    +minAmount : Decimal
+    +maxAmount : Decimal
+    +active : boolean
+  }
+  class InputField {
+    +name : String
+    +label : String
+    +required : boolean
+  }
+}
+
+package "Fees and Commissions" {
+  class FeeRule {
+    +ruleType : FIXED | PERCENTAGE | TIERED
+    +calculateFee(amount : Decimal) : Decimal
+  }
+  class Promotion {
+    +startDate : Date
+    +endDate : Date
+  }
+  class Commission {
+    +rate : Decimal
+    +amount : Decimal
+  }
+}
+
+package "Payment Processing" {
+  class Payment {
+    +id : UUID
+    +reference : String
+    +billAccountRef : String
+    +billAmount : Decimal
+    +feeAmount : Decimal
+    +totalAmount : Decimal
+    +status : PaymentStatus
+    +transitionTo(status : PaymentStatus)
+  }
+  class PaymentEvent {
+    +fromStatus : PaymentStatus
+    +toStatus : PaymentStatus
+    +reason : String
+    +occurredAt : DateTime
+  }
+  class IdempotencyRecord {
+    +key : String
+    +storedResponse : String
+  }
+}
+
+package "Fraud Checks" {
+  interface FraudRule {
+    +check(payment : Payment) : FraudResult
+  }
+  class DailyLimitRule
+  class VelocityRule
+  class BlockedAccountRule
+}
+
+package "Biller Integration" {
+  interface BillerGateway {
+    +inquire(req) : InquiryResult
+    +pay(req) : PaymentResult
+    +queryStatus(reference) : PaymentResult
+  }
+  class "ElectroCo / AquaCo /\nTopUpNet / NetCo\nAdapters" as Adapters
+  class PaymentRetry {
+    +attemptNumber : int
+    +scheduledAt : DateTime
+  }
+  class BillerCallback {
+    +billerReference : String
+    +result : String
+    +duplicate : boolean
+  }
+}
+
+package "Notifications" {
+  class Notification {
+    +channel : SMS | EMAIL | PUSH
+    +templateCode : String
+    +status : PENDING | SENT | UNDELIVERED
+    +attempts : int
+  }
+}
+
+package "Reconciliation" {
+  class SettlementFile {
+    +settlementDate : Date
+    +fileName : String
+  }
+  class SettlementRecord {
+    +billerReference : String
+    +amount : Decimal
+    +billerStatus : String
+  }
+  class ReconciliationDifference {
+    +differenceType : String
+    +reviewStatus : String
+    +supportNote : String
+  }
+}
+
+class AuditLog {
+  +actorId : UUID
+  +action : String
+  +entityType : String
+  +entityId : UUID
+  +reason : String
+  +occurredAt : DateTime
+}
+
+enum PaymentStatus {
+  INITIATED
+  FUNDS_HELD
+  SENT_TO_BILLER
+  COMPLETED
+  FAILED
+  UNKNOWN
+  REJECTED
+  REFUNDED
+}
+
+' ---- Accounts and Wallet ----
+User "1" -- "1" Wallet : owns
+Wallet "1" *-- "0..*" LedgerEntry
+Wallet "1" *-- "0..*" Hold
+Wallet "1" -- "0..*" TopUp
+
+' ---- Catalog and fees ----
+Biller "1" *-- "1..*" BillerService
+BillerService "1" *-- "0..*" InputField
+BillerService "0..*" -- "1" FeeRule : uses
+Biller "1" -- "0..*" Promotion
+
+' ---- Payment ----
+User "1" -- "0..*" Payment : customer
+User "0..1" -- "0..*" Payment : agent
+BillerService "1" -- "0..*" Payment
+Payment "1" *-- "1..*" PaymentEvent
+Payment "1" -- "1" IdempotencyRecord
+Payment "1" -- "0..1" Hold
+Payment "1" -- "0..*" LedgerEntry
+Payment "1" -- "0..1" Commission
+Payment "1" -- "0..*" Refund
+Payment "1" -- "0..*" PaymentRetry
+Payment "1" -- "0..*" BillerCallback
+Payment "1" -- "0..*" Notification
+Payment --> PaymentStatus
+
+' ---- Fraud and billers ----
+FraudRule <|.. DailyLimitRule
+FraudRule <|.. VelocityRule
+FraudRule <|.. BlockedAccountRule
+BillerGateway <|.. Adapters
+Biller ..> BillerGateway : adapterCode
+
+' ---- Reconciliation ----
+Biller "1" -- "0..*" SettlementFile
+SettlementFile "1" *-- "0..*" SettlementRecord
+SettlementRecord "0..*" -- "0..1" Payment
+ReconciliationDifference "0..*" -- "1" Payment
+ReconciliationDifference "0..*" -- "1" SettlementFile
+
+note bottom of Wallet
+  No stored balance: both balances are computed
+  from LedgerEntry rows.
+end note
+note bottom of Refund
+  Refund of a COMPLETED payment (FR-27). It adds a
+  REFUND ledger entry and does not change Payment.status.
+end note
+@enduml

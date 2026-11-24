@@ -1,0 +1,180 @@
+@startuml
+left to right direction
+scale max 3500 width
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam nodesep 30
+skinparam ranksep 90
+
+skinparam usecase {
+  BackgroundColor #EAF2F8
+  BorderColor #2874A6
+}
+skinparam actor {
+  BorderColor #1B2631
+  FontColor #1B2631
+}
+skinparam rectangle {
+  BorderColor #154360
+  FontColor #154360
+}
+
+' ===== Actors =====
+actor Customer
+actor Agent
+actor "Card Payment Provider" as CardProvider
+actor Admin
+actor "Support Employee" as Support
+actor "Compliance Auditor" as Auditor
+actor "External Biller" as Biller
+actor "SMS / Push Provider" as NotifProvider
+
+rectangle "PayLink System" {
+
+  package "1. Accounts and Wallet" {
+    usecase "Register Account" as UC01
+    usecase "Upgrade Verification Level" as UC02
+    usecase "View Wallet Balance" as UC03
+    usecase "View Transaction History" as UC04
+    usecase "Top Up Wallet" as UC05
+  }
+
+  package "2. Biller Catalog" {
+    usecase "View Billers and Input Fields" as UC06
+    usecase "Manage Billers and Services" as UC07
+  }
+
+  package "3. Payment Processing" {
+    usecase "Inquire Bill" as UC08
+    usecase "Pay Bill from Wallet" as UC09
+    usecase "Validate Idempotency Key" as UC10
+    usecase "Hold Funds" as UC11
+    usecase "Capture Hold" as UC12
+    usecase "Release Hold" as UC13
+  }
+
+  package "4. Biller Integration" {
+    usecase "Send Payment to Biller" as UC14
+    usecase "Handle Biller Timeout" as UC15
+    usecase "Schedule Status Re-queries" as UC16
+    usecase "Process Biller Callback" as UC17
+    usecase "Ignore Duplicate Callback" as UC18
+  }
+
+  package "5. Fees and Commissions" {
+    usecase "Calculate Service Fee" as UC19
+    usecase "Apply Promotion" as UC20
+    usecase "Credit Agent Commission" as UC21
+    usecase "Configure Fees and Limits" as UC22
+  }
+
+  package "6. Notifications" {
+    usecase "Send Payment Notification" as UC23
+    usecase "Retry Failed Notification" as UC24
+    usecase "Mark Notification Undelivered" as UC25
+  }
+
+  package "7. Fraud Checks" {
+    usecase "Perform Fraud Checks" as UC26
+    usecase "Check Daily Limit" as UC27
+    usecase "Check Velocity" as UC28
+    usecase "Check Blocked Account" as UC29
+    usecase "Block Account Temporarily" as UC30
+  }
+
+  package "8. Reconciliation" {
+    usecase "Run Nightly Reconciliation" as UC31
+    usecase "Generate Difference Report" as UC32
+  }
+
+  package "Support and Audit" {
+    usecase "Search Payment by Reference" as UC33
+    usecase "View Full Payment History" as UC34
+    usecase "Block / Unblock Account" as UC35
+    usecase "Request Refund\n(completed payment)" as UC36
+    usecase "Approve Refund" as UC37
+    usecase "View Daily Totals" as UC38
+    usecase "View Audit Log" as UC40
+  }
+}
+
+' ===== Actors on the left =====
+Customer -- UC01
+Customer -- UC03
+Customer -- UC04
+Customer -- UC05
+Customer -- UC06
+Customer -- UC08
+Customer -- UC09
+Customer -- UC36
+
+Agent -- UC05
+Agent -- UC08
+Agent -- UC09
+
+' ===== Actors on the right =====
+UC02 -- Support
+UC33 -- Support
+UC35 -- Support
+UC37 -- Support
+UC32 -- Support
+
+UC07 -- Admin
+UC22 -- Admin
+UC38 -- Admin
+
+UC34 -- Auditor
+UC40 -- Auditor
+
+UC14 -- Biller
+UC17 -- Biller
+UC31 -- Biller
+
+UC05 -- CardProvider
+UC23 -- NotifProvider
+
+' ===== INCLUDE: blue dotted arrow (always happens) =====
+UC08 -[#2874A6,dotted]-> UC19
+UC09 -[#2874A6,dotted]-> UC10
+UC09 -[#2874A6,dotted]-> UC19
+UC09 -[#2874A6,dotted]-> UC26
+UC09 -[#2874A6,dotted]-> UC11
+UC09 -[#2874A6,dotted]-> UC14
+UC09 -[#2874A6,dotted]-> UC23
+UC15 -[#2874A6,dotted]-> UC16
+UC26 -[#2874A6,dotted]-> UC27
+UC26 -[#2874A6,dotted]-> UC28
+UC26 -[#2874A6,dotted]-> UC29
+UC31 -[#2874A6,dotted]-> UC32
+UC33 -[#2874A6,dotted]-> UC34
+
+' ===== EXTEND: red dashed arrow (optional, points to the base use case) =====
+UC12 -[#C0392B,dashed]-> UC09
+UC13 -[#C0392B,dashed]-> UC09
+UC21 -[#C0392B,dashed]-> UC09
+UC15 -[#C0392B,dashed]-> UC14
+UC18 -[#C0392B,dashed]-> UC17
+UC20 -[#C0392B,dashed]-> UC19
+UC24 -[#C0392B,dashed]-> UC23
+UC25 -[#C0392B,dashed]-> UC24
+UC30 -[#C0392B,dashed]-> UC28
+UC37 -[#C0392B,dashed]-> UC36
+
+legend right
+  <color:#2874A6>**- - -> include**</color> : always happens as part of the base use case
+  <color:#C0392B>**- - -> extend**</color> : optional or conditional, arrow points to the base use case
+endlegend
+
+note bottom of UC13
+  Only a FAILED payment is released and becomes REFUNDED.
+  UNKNOWN is never released automatically.
+end note
+
+note bottom of UC40
+  Every money movement and admin action is written to the
+  audit log (FR-25). This is built into every use case and
+  is not drawn as a separate use case, to keep the lines readable.
+end note
+@enduml

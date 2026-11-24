@@ -1,0 +1,31 @@
+@startuml PayLink_Payment_State_Diagram
+title PayLink - Payment State Diagram (Section 2.5)
+
+[*] --> INITIATED
+
+INITIATED --> FUNDS_HELD : Fraud checks pass and\nwallet has enough funds
+INITIATED --> REJECTED : Fraud check fails or\nfunds are insufficient
+
+FUNDS_HELD --> SENT_TO_BILLER : Request sent to biller
+
+SENT_TO_BILLER --> COMPLETED : Biller confirms
+SENT_TO_BILLER --> FAILED : Biller refuses
+SENT_TO_BILLER --> UNKNOWN : No answer within timeout
+
+UNKNOWN --> COMPLETED : Biller later confirms\n(callback, retry or settlement file)
+UNKNOWN --> FAILED : Biller later refuses or\nreconciliation finds no payment
+
+FAILED --> REFUNDED : Hold released to the wallet
+
+COMPLETED --> [*]
+REJECTED --> [*]
+REFUNDED --> [*]
+
+note right of UNKNOWN
+  Money stays held.
+  Never refunded automatically.
+  Re-queried after 1, 5 and 15 minutes,
+  then left to reconciliation.
+end note
+
+@enduml
