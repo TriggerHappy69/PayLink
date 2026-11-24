@@ -1,0 +1,27 @@
+@startuml
+autonumber
+
+participant "Biller / Retry / Reconciliation" as SRC
+participant PaymentService as PS
+participant WalletService as WS
+participant NotificationService as NT
+actor Customer
+
+SRC -> PS : markFailed(paymentId, reason)
+
+opt status is SENT_TO_BILLER or UNKNOWN
+  PS -> PS : status = FAILED
+end
+
+PS -> WS : releaseHold(paymentId)
+
+alt hold is ACTIVE
+  WS -> WS : hold = RELEASED\nledger entry HOLD_RELEASE
+  WS --> PS : money returned to available balance
+  PS -> PS : status = REFUNDED
+  PS -> NT : send(failure message)
+  NT -> Customer : SMS "Payment failed: reason.\nMoney returned to your wallet."
+else hold already released
+  WS --> PS : nothing to do
+end
+@enduml

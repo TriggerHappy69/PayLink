@@ -1,0 +1,66 @@
+@startuml
+autonumber
+
+actor Customer
+participant API
+participant PaymentService as PS
+participant FeeService as FS
+participant FraudChain as FC
+participant WalletService as WS
+participant BillerGateway as BG
+participant NotificationService as NT
+
+Customer -> API : pay bill (Idempotency-Key)
+API -> PS : pay(request)
+
+alt key already used
+  PS --> API : return original result
+else new request
+  PS -> PS : create Payment, status = INITIATED
+  PS -> FS : calculateFee(serviceId, amount)
+  FS --> PS : feeAmount
+  PS -> FC : check(payment)
+
+  alt fraud check fails
+    FC --> PS : rejected (reason)
+    PS -> PS : status = REJECTED
+    PS --> API : REJECTED (reason)
+  else checks pass
+    PS -> WS : holdFunds(walletId, amount + fee, paymentId)
+
+    alt insufficient funds
+      WS --> PS : insufficient funds
+      PS -> PS : status = REJECTED
+      PS --> API : REJECTED (reason)
+    else funds held
+      WS --> PS : hold created
+      PS -> PS : status = FUNDS_HELD
+      PS -> PS : status = SENT_TO_BILLER
+      PS -> BG : pay(reference, amount)
+
+      alt biller confirms
+        BG --> PS : success
+        PS -> WS : captureHold(paymentId)
+        PS -> PS : status = COMPLETED
+        PS -> NT : send(receipt)
+        PS --> API : COMPLETED
+      else biller refuses
+        BG --> PS : refused (reason)
+        PS -> PS : status = FAILED
+        PS --> API : FAILED (reason)
+        ref over PS, WS : Refund a failed payment
+      else biller accepts, answer comes later (TopUpNet)
+        BG --> PS : accepted (pending)
+        note right of PS : status stays SENT_TO_BILLER\nuntil the callback arrives
+        PS --> API : being processed
+      else timeout (10 s)
+        BG --> PS : no answer
+        PS -> PS : status = UNKNOWN (money stays held)
+        PS --> API : being processed
+      end
+    end
+  end
+end
+
+API --> Customer : response
+@enduml

@@ -1,0 +1,285 @@
+@startuml
+hide circle
+skinparam linetype ortho
+
+' ===== Accounts and Wallet =====
+entity users {
+  * id : uuid <<PK>>
+  --
+  name : varchar
+  phone : varchar <<unique>>
+  email : varchar
+  user_type : varchar (CUSTOMER, AGENT, STAFF)
+  staff_role : varchar (SUPPORT, ADMIN, AUDITOR; nullable)
+  terminal_id : varchar (nullable, agents only)
+  verification_level : varchar (BASIC, VERIFIED)
+  status : varchar (ACTIVE, BLOCKED)
+  blocked_until : timestamp (nullable)
+  created_at : timestamp
+}
+
+entity wallets {
+  * id : uuid <<PK>>
+  --
+  * user_id : uuid <<FK, unique>>
+  currency : varchar
+  version : int
+}
+
+entity ledger_entries {
+  * id : uuid <<PK>>
+  --
+  * wallet_id : uuid <<FK>>
+  payment_id : uuid <<FK, nullable>>
+  topup_id : uuid <<FK, nullable>>
+  entry_type : varchar (TOPUP, HOLD, HOLD_RELEASE, CHARGE, FEE_INCOME, COMMISSION, REFUND)
+  amount : decimal(14,2)
+  reason : varchar
+  created_by : uuid
+  created_at : timestamp
+}
+
+entity holds {
+  * id : uuid <<PK>>
+  --
+  * wallet_id : uuid <<FK>>
+  * payment_id : uuid <<FK, unique>>
+  amount : decimal(14,2)
+  status : varchar (ACTIVE, CAPTURED, RELEASED)
+  created_at : timestamp
+}
+
+entity topups {
+  * id : uuid <<PK>>
+  --
+  * wallet_id : uuid <<FK>>
+  agent_id : uuid <<FK, nullable>>
+  amount : decimal(14,2)
+  source : varchar (CARD, AGENT_CASH)
+  status : varchar
+  created_at : timestamp
+}
+
+entity refunds {
+  * id : uuid <<PK>>
+  --
+  * payment_id : uuid <<FK>>
+  amount : decimal(14,2)
+  status : varchar
+  reason : varchar
+  requested_by : uuid <<FK>>
+  approved_by : uuid <<FK, nullable>>
+  created_at : timestamp
+}
+
+' ===== Biller Catalog =====
+entity billers {
+  * id : uuid <<PK>>
+  --
+  code : varchar <<unique>>
+  name : varchar
+  service_type : varchar
+  adapter_code : varchar
+  active : boolean
+}
+
+entity biller_services {
+  * id : uuid <<PK>>
+  --
+  * biller_id : uuid <<FK>>
+  * fee_rule_id : uuid <<FK>>
+  name : varchar
+  min_amount : decimal(14,2)
+  max_amount : decimal(14,2)
+  active : boolean
+}
+
+entity input_fields {
+  * id : uuid <<PK>>
+  --
+  * service_id : uuid <<FK>>
+  name : varchar
+  label : varchar
+  validation_regex : varchar
+  required : boolean
+}
+
+' ===== Fees and Commissions =====
+entity fee_rules {
+  * id : uuid <<PK>>
+  --
+  rule_type : varchar (FIXED, PERCENTAGE, TIERED)
+  fixed_amount : decimal(14,2)
+  percentage : decimal(5,2)
+  minimum_fee : decimal(14,2)
+  threshold : decimal(14,2)
+  low_fee : decimal(14,2)
+  high_fee : decimal(14,2)
+}
+
+entity promotions {
+  * id : uuid <<PK>>
+  --
+  * biller_id : uuid <<FK>>
+  start_date : date
+  end_date : date
+}
+
+entity commissions {
+  * id : uuid <<PK>>
+  --
+  * payment_id : uuid <<FK, unique>>
+  * agent_id : uuid <<FK>>
+  rate : decimal(5,2)
+  amount : decimal(14,2)
+}
+
+' ===== Payment Processing =====
+entity payments {
+  * id : uuid <<PK>>
+  --
+  reference : varchar <<unique>>
+  biller_reference : varchar (nullable)
+  * customer_id : uuid <<FK>>
+  agent_id : uuid <<FK, nullable>>
+  * service_id : uuid <<FK>>
+  bill_account_ref : varchar
+  bill_amount : decimal(14,2)
+  fee_amount : decimal(14,2)
+  total_amount : decimal(14,2)
+  status : varchar (INITIATED, FUNDS_HELD, SENT_TO_BILLER, COMPLETED, FAILED, UNKNOWN, REJECTED, REFUNDED)
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity payment_events {
+  * id : uuid <<PK>>
+  --
+  * payment_id : uuid <<FK>>
+  from_status : varchar
+  to_status : varchar
+  reason : varchar
+  occurred_at : timestamp
+}
+
+entity idempotency_records {
+  * key : varchar <<PK>>
+  --
+  * payment_id : uuid <<FK, unique>>
+  request_hash : varchar
+  stored_response : text
+  created_at : timestamp
+}
+
+' ===== Biller Integration =====
+entity payment_retries {
+  * id : uuid <<PK>>
+  --
+  * payment_id : uuid <<FK>>
+  attempt_number : int
+  scheduled_at : timestamp
+  status : varchar (PENDING, DONE)
+}
+
+entity biller_callbacks {
+  * id : uuid <<PK>>
+  --
+  payment_id : uuid <<FK, nullable>>
+  biller_reference : varchar
+  result : varchar
+  duplicate : boolean
+  received_at : timestamp
+}
+
+' ===== Notifications =====
+entity notifications {
+  * id : uuid <<PK>>
+  --
+  * payment_id : uuid <<FK>>
+  * user_id : uuid <<FK>>
+  channel : varchar (SMS, EMAIL, PUSH)
+  template_code : varchar
+  message : text
+  status : varchar (PENDING, SENT, UNDELIVERED)
+  attempts : int
+  sent_at : timestamp (nullable)
+}
+
+' ===== Reconciliation =====
+entity settlement_files {
+  * id : uuid <<PK>>
+  --
+  * biller_id : uuid <<FK>>
+  settlement_date : date
+  file_name : varchar
+  received_at : timestamp
+}
+
+entity settlement_records {
+  * id : uuid <<PK>>
+  --
+  * settlement_file_id : uuid <<FK>>
+  payment_id : uuid <<FK, nullable>>
+  biller_reference : varchar
+  amount : decimal(14,2)
+  biller_status : varchar
+}
+
+entity reconciliation_differences {
+  * id : uuid <<PK>>
+  --
+  * settlement_file_id : uuid <<FK>>
+  * payment_id : uuid <<FK>>
+  difference_type : varchar
+  review_status : varchar
+  support_note : text
+}
+
+' ===== Audit =====
+entity audit_log {
+  * id : uuid <<PK>>
+  --
+  actor_id : uuid
+  action : varchar
+  entity_type : varchar
+  entity_id : uuid
+  reason : varchar
+  occurred_at : timestamp
+}
+
+' ===== Relationships =====
+users ||--|| wallets
+wallets ||--o{ ledger_entries
+wallets ||--o{ holds
+wallets ||--o{ topups
+topups |o--o{ ledger_entries
+users |o--o{ topups : agent
+
+users ||--o{ payments : customer
+users |o--o{ payments : agent
+biller_services ||--o{ payments
+
+payments |o--o{ ledger_entries
+payments ||--o| holds
+payments ||--o{ payment_events
+payments ||--|| idempotency_records
+payments ||--o{ payment_retries
+payments |o--o{ biller_callbacks
+payments ||--o{ notifications
+payments ||--o| commissions
+payments ||--o{ refunds
+
+users ||--o{ notifications
+users ||--o{ commissions : agent
+
+billers ||--o{ biller_services
+billers ||--o{ promotions
+billers ||--o{ settlement_files
+biller_services ||--o{ input_fields
+fee_rules ||--o{ biller_services
+
+settlement_files ||--o{ settlement_records
+settlement_files ||--o{ reconciliation_differences
+payments |o--o{ settlement_records
+payments ||--o{ reconciliation_differences
+@enduml
